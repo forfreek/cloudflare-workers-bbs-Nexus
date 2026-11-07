@@ -78,7 +78,7 @@ jobs:
         run: npx wrangler d1 execute cf-bbs --remote --file=./seed.sql --yes
 
       - name: Sync SESSION_SECRET
-        if: ${{ steps.gate.outputs.ready == 'true' && secrets.SESSION_SECRET != '' }}
+        if: ${{ steps.gate.outputs.ready == 'true' }}
         env:
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
         run: printf '%s' "$SESSION_SECRET" | npx wrangler secret put SESSION_SECRET
