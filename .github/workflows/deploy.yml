@@ -83,6 +83,17 @@ jobs:
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
         run: printf '%s' "$SESSION_SECRET" | npx wrangler secret put SESSION_SECRET
 
+      - name: Sync MAIL_FROM
+        if: ${{ steps.gate.outputs.ready == 'true' }}
+        env:
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+        run: |
+          if [ -z "$MAIL_FROM" ]; then
+            echo "::error::未配置 MAIL_FROM，请在 GitHub Actions Secrets 中添加"
+            exit 1
+          fi
+          printf '%s' "$MAIL_FROM" | npx wrangler secret put MAIL_FROM
+
       - name: Deploy worker
         id: deploy
         if: ${{ steps.gate.outputs.ready == 'true' }}
