@@ -32,10 +32,12 @@ export interface Env {
   /** 可选：设为 1 允许图床失败时自动切换渠道重试（默认关闭） */
   IMGBED_AUTO_RETRY?: string;
 
-  /** Resend 发信：API Key 与发件人需同时配置才会真正发信 */
-  RESEND_API_KEY?: string;
-  /** 发件人，形如 `Nexus <noreply@example.com>`（域名需在 Resend 验证） */
+  /** Cloudflare Email Sending binding（wrangler.toml 的 [[send_email]]，类型为 Workers SendEmail） */
+  EMAIL?: SendEmail;
+  /** 发件地址，如 noreply@cloudcom.us.ci（secret，须在 allowed_sender_addresses 内） */
   MAIL_FROM?: string;
+  /** 发件人显示名，对应结构化 from.name */
+  MAIL_FROM_NAME?: string;
   /** 可选：Reply-To 地址 */
   MAIL_REPLY_TO?: string;
   /** 设为 true 时未验证邮箱的用户不能发帖 / 回复 */

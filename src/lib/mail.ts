@@ -1,11 +1,12 @@
 import type { Env } from '../env';
 
 /**
- * 邮件发送：Resend（https://resend.com）
+ * 邮件发送：Cloudflare Email Sending（Workers send_email binding）
  *
- * 需要的环境变量：
- *   RESEND_API_KEY   必填，resend 后台创建
- *   MAIL_FROM        必填，形如 `Nexus <noreply@yourdomain.com>`，域名需在 Resend 验证
+ * 需要的配置：
+ *   EMAIL            必填，wrangler.toml 的 [[send_email]] binding
+ *   MAIL_FROM        必填，发件地址，如 noreply@cloudcom.us.ci（secret）
+ *   MAIL_FROM_NAME   可选，发件人显示名（默认 Nexus）
  *   MAIL_REPLY_TO    可选，回复地址
  *   SITE_URL         可选，邮件里的链接前缀（默认取请求 origin）
  *
@@ -28,53 +29,41 @@ export interface MailResult {
 }
 
 export function mailConfigured(env: Env): boolean {
-  return !!(env.RESEND_API_KEY || '').trim() && !!(env.MAIL_FROM || '').trim();
+  return !!env.EMAIL && !!(env.MAIL_FROM || '').trim();
 }
 
 export async function sendMail(env: Env, opts: MailOptions): Promise<MailResult> {
-  const key = (env.RESEND_API_KEY || '').trim();
   const from = (env.MAIL_FROM || '').trim();
-  if (!key || !from) return { ok: false, error: 'mail_not_configured' };
+  if (!env.EMAIL || !from) return { ok: false, error: 'mail_not_configured' };
 
-  const payload: Record<string, unknown> = {
-    from,
-    to: [opts.to],
-    subject: opts.subject,
-    html: opts.html,
-    text: opts.text,
-  };
+  const name = (env.MAIL_FROM_NAME || env.SITE_NAME || 'Nexus').trim() || 'Nexus';
   const replyTo = (opts.replyTo || env.MAIL_REPLY_TO || '').trim();
-  if (replyTo) payload.reply_to = replyTo;
 
-  let res: Response;
   try {
-    res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${key}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal ? AbortSignal.timeout(15_000) : undefined,
+    const result = await env.EMAIL.send({
+      to: opts.to,
+      from: { email: from, name },
+      subject: opts.subject,
+      html: opts.html,
+      text: opts.text,
+      ...(replyTo ? { replyTo } : {}),
     });
+    return { ok: true, id: result.messageId };
   } catch (err) {
-    console.error('resend_network_error', (err as Error)?.message || err);
-    return { ok: false, error: 'network' };
+    const code = emailErrorCode(err);
+    console.error('email_send_error', code ?? 'unknown', err instanceof Error ? err.message : err);
+    if (code === 'E_RATE_LIMIT_EXCEEDED' || code === 'E_DAILY_LIMIT_EXCEEDED') {
+      return { ok: false, error: 'rate_limited', status: 429 };
+    }
+    return { ok: false, error: 'send_failed' };
   }
+}
 
-  const text = await res.text();
-  if (!res.ok) {
-    // 常见：401 key 无效、403 域名未验证、422 收件人非法、429 超配额
-    console.error('resend_http_error', res.status, text.slice(0, 300));
-    return { ok: false, error: res.status === 429 ? 'rate_limited' : 'send_failed', status: res.status };
-  }
-
-  try {
-    const data = JSON.parse(text) as { id?: string };
-    return { ok: true, id: data.id };
-  } catch {
-    return { ok: true };
-  }
+/** Cloudflare Email Sending 抛出的 Error 带有字符串 code */
+function emailErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object' || !('code' in err)) return undefined;
+  const code = (err as { code?: unknown }).code;
+  return typeof code === 'string' && code ? code : undefined;
 }
 
 /** 验证邮件（中英双语，跟着用户语言走） */
